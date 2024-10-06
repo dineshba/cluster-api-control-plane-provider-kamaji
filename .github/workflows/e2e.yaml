@@ -208,7 +208,7 @@ jobs:
                   name: capi-quickstart-md-0
                   namespace: default
                 version: v1.23.10
-            EOF
+          EOF
 
             kubectl apply -f targetcluster.yaml
             sleep 100
