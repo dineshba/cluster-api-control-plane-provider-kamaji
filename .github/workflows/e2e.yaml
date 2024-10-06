@@ -14,8 +14,46 @@ jobs:
         uses: helm/kind-action@v1
       - name: "Test kubectl get pods"
         run: |
-          which kubectl
-          ps aux | grep kube
-          ps aux | grep container
-          kubectl get nodes -o wide
+          curl -L https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.8.3/clusterctl-linux-amd64 -o clusterctl
+          sudo chmod +x clusterctl
+          sudo mv clusterctl /usr/bin/clusterctl
+          clusterctl version
+
+          # Install Metal LB for exposing Kubevirt based Workload Cluster's Api server
+          METALLB_VER=$(curl "https://api.github.com/repos/metallb/metallb/releases/latest" | jq -r ".tag_name")
+          kubectl apply -f "https://raw.githubusercontent.com/metallb/metallb/${METALLB_VER}/config/manifests/metallb-native.yaml"
+          kubectl wait pods -n metallb-system -l app=metallb,component=controller --for=condition=Ready --timeout=10m
+          kubectl wait pods -n metallb-system -l app=metallb,component=speaker --for=condition=Ready --timeout=2m
+
+          GW_IP=$(docker network inspect -f '{{range .IPAM.Config}}{{.Gateway}}{{end}}' kind)
+          NET_IP=$(echo ${GW_IP} | sed -E 's|^([0-9]+\.[0-9]+)\..*$|\1|g')
+          cat <<EOF | sed -E "s|172.19|${NET_IP}|g" | kubectl apply -f -
+          apiVersion: metallb.io/v1beta1
+          kind: IPAddressPool
+          metadata:
+            name: capi-ip-pool
+            namespace: metallb-system
+          spec:
+            addresses:
+            - 172.19.255.200-172.19.255.250
+          ---
+          apiVersion: metallb.io/v1beta1
+          kind: L2Advertisement
+          metadata:
+            name: empty
+            namespace: metallb-system
+          EOF
+
+
+          # get KubeVirt version
+          KV_VER=$(curl "https://api.github.com/repos/kubevirt/kubevirt/releases/latest" | jq -r ".tag_name")
+          # deploy required CRDs
+          kubectl apply -f "https://github.com/kubevirt/kubevirt/releases/download/${KV_VER}/kubevirt-operator.yaml"
+          # deploy the KubeVirt custom resource
+          kubectl apply -f "https://github.com/kubevirt/kubevirt/releases/download/${KV_VER}/kubevirt-cr.yaml"
+          kubectl wait -n kubevirt kv kubevirt --for=condition=Available --timeout=10m
+
+          clusterctl init --infrastructure kubevirt
+
+          sleep 60
           kubectl get pods -o wide -A
