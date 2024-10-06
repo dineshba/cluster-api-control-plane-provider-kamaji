@@ -52,6 +52,8 @@ jobs:
           kubectl apply -f "https://github.com/kubevirt/kubevirt/releases/download/${KV_VER}/kubevirt-cr.yaml"
           kubectl wait -n kubevirt kv kubevirt --for=condition=Available --timeout=10m
 
+          mkdir ~/.cluster-api
+          touch ~/.cluster-api/clusterctl.yaml
           cat <<EOF > ~/.cluster-api/clusterctl.yaml
           providers:
           - name: "kamaji"
