@@ -9,15 +9,22 @@ on:
 jobs:
   create-cluster:
     runs-on: ubuntu-latest
-    services:
-      registry:
-        image: registry:2
-        ports:
-          - 5000:5000
     steps:
       - uses: actions/checkout@v4
       - name: Create k8s Kind Cluster
-        uses: helm/kind-action@v1
+        uses: container-tools/kind-action@v1
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          push: true
+          tags: kind-registry:5000/clastix/cluster-api-control-plane-provider-kamaji:${{ github.sha }}
+      - name: Inspect the image in local registry
+        run: |
+          docker buildx imagetools inspect kind-registry:5000/clastix/cluster-api-control-plane-provider-kamaji:${{ github.sha }}
       - name: "Setup Kubevirt Infrastructure Stack"
         run: |
           # Install Metal LB for exposing Kubevirt based Workload Cluster's Api server
@@ -80,23 +87,11 @@ jobs:
           helm repo update
           helm install kamaji clastix/kamaji -n kamaji-system --create-namespace
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      - name: Build image
-        uses: docker/build-push-action@v6
-        with:
-          push: true
-          tags: localhost:5000/clastix/cluster-api-control-plane-provider-kamaji:${{ github.sha }}
-      - name: Inspect the image in local registry
-        run: |
-          docker buildx imagetools inspect localhost:5000/clastix/cluster-api-control-plane-provider-kamaji:${{ github.sha }}
       - name: "Setup CAPI stack with kubevirt as infra and kamaji as controlplane providers"
         run: |
           mkdir ~/.cluster-api
           touch ~/.cluster-api/clusterctl.yaml
-          sed -i "s/docker.io\/clastix\/cluster-api-control-plane-provider-kamaji:.*/localhost:5000\/clastix\/cluster-api-control-plane-provider-kamaji:$GITHUB_SHA/g" config/control-plane-components.yaml
+          sed -i "s/docker.io\/clastix\/cluster-api-control-plane-provider-kamaji:.*/kind-registry:5000\/clastix\/cluster-api-control-plane-provider-kamaji:$GITHUB_SHA/g" config/control-plane-components.yaml
           cat config/control-plane-components.yaml | grep image
           cp config/control-plane-components.yaml ${HOME}/control-plane-components.yaml
           cat <<EOF > ~/.cluster-api/clusterctl.yaml
