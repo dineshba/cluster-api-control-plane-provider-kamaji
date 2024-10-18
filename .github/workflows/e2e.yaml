@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Create k8s Kind Cluster
-        uses: container-tools/kind-action@v1
+        uses: helm/kind-action@v1
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
@@ -20,11 +20,12 @@ jobs:
       - name: Build image
         uses: docker/build-push-action@v6
         with:
-          push: true
-          tags: kind-registry:5000/clastix/cluster-api-control-plane-provider-kamaji:${{ github.sha }}
-      - name: Inspect the image in local registry
+          push: false
+          load: true
+          tags: docker.io/clastix/cluster-api-control-plane-provider-kamaji:${{ github.sha }}
+      - name: "Load image into kind cluster"
         run: |
-          docker buildx imagetools inspect kind-registry:5000/clastix/cluster-api-control-plane-provider-kamaji:${{ github.sha }}
+          kind load docker-image --name chart-testing docker.io/clastix/cluster-api-control-plane-provider-kamaji:$GITHUB_SHA
       - name: "Setup Kubevirt Infrastructure Stack"
         run: |
           # Install Metal LB for exposing Kubevirt based Workload Cluster's Api server
@@ -91,15 +92,20 @@ jobs:
         run: |
           mkdir ~/.cluster-api
           touch ~/.cluster-api/clusterctl.yaml
-          sed -i "s/docker.io\/clastix\/cluster-api-control-plane-provider-kamaji:.*/kind-registry:5000\/clastix\/cluster-api-control-plane-provider-kamaji:$GITHUB_SHA/g" config/control-plane-components.yaml
+          sed -i "s/docker.io\/clastix\/cluster-api-control-plane-provider-kamaji:.*/docker.io\/clastix\/cluster-api-control-plane-provider-kamaji:$GITHUB_SHA/g" config/control-plane-components.yaml
           cat config/control-plane-components.yaml | grep image
-          cp config/control-plane-components.yaml ${HOME}/control-plane-components.yaml
+          mkdir -p ${HOME}/control-plane-kamaji/v0.11.0/
+
+          cp config/control-plane-components.yaml ${HOME}/control-plane-kamaji/v0.11.0/
+          cp config/metadata.yaml ${HOME}/control-plane-kamaji/v0.11.0/
           cat <<EOF > ~/.cluster-api/clusterctl.yaml
           providers:
           - name: "kamaji"
-            url: "${HOME}/control-plane-components.yaml"
+            url: "${HOME}/control-plane-kamaji/v0.11.0/control-plane-components.yaml"
             type: "ControlPlaneProvider"
           EOF
+
+          cat ~/.cluster-api/clusterctl.yaml
 
           clusterctl init --infrastructure kubevirt --control-plane kamaji
 
